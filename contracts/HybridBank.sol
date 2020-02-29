@@ -1,4 +1,4 @@
-pragma solidity ^0.5.15;
+pragma solidity ^0.6.1;
 
 interface LendingPoolAddressesProvider {
     function getLendingPool() external view returns (address);
@@ -40,6 +40,8 @@ contract HybridBank {
     // LendingPool AddressesProvider 0x1c8756FD2B28e9426CDBDcC7E3c4d64fa9A54728
     // aToken instance 0x2433A1b6FcF156956599280C3Eb1863247CFE675
     // aDai asset address 0xf80A32A835F79D7787E8a8ee5721D0fEaFd78108
+    // aETH asset address 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE
+    // Dai smart contract 0x580D4Fdc4BF8f9b5ae2fb9225D584fED4AD5375c
     constructor(LendingPoolAddressesProvider _lendingPoolAddressesProvider,
                 address _aTokenAddress,
                 address _underlying_asset,
@@ -47,8 +49,8 @@ contract HybridBank {
                 public payable {
         /* Set the owner to the creator of this contract */
         owner = msg.sender;
+        
         /// Retrieve LendingPool address
-    
         LendingPoolAddressesProvider provider = LendingPoolAddressesProvider(_lendingPoolAddressesProvider);
             
         lendingPool = LendingPool(provider.getLendingPool());
@@ -58,6 +60,8 @@ contract HybridBank {
         underlying_asset = _underlying_asset;
         // uint256 amount = 1000 * 1e18;
         referral = _referral;
+        accounts[msg.sender].investmentThreshold = 50;
+        accounts[msg.sender].minBalance = 10;
 
     }
 
@@ -69,11 +73,11 @@ contract HybridBank {
     /// @return The balance of the user after the deposit is made
     function deposit() public payable returns (uint256) {
         uint256 amount_to_invest;
-        if(accounts[msg.sender].investmentThreshold > 0) {
+        // if(accounts[msg.sender].investmentThreshold > 0) {
             amount_to_invest = accounts[msg.sender].balance - accounts[msg.sender].investmentThreshold;
             /// sendToAave(accounts[msg.sender].balance - accounts[msg.sender].investmentThreshold);
             lendingPool.deposit(underlying_asset, amount_to_invest, referral);
-        }
+        // }
         accounts[msg.sender].balance += msg.value;
         emit LogDepositMade(msg.sender, msg.value);
         return accounts[msg.sender].balance;
