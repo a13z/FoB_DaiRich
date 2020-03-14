@@ -1,4 +1,4 @@
-# EthLondon_Hackathon_DaiRich
+# FoB_DaiRich
 DaiRich self-managed bank account
 
 What If?
