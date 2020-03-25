@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import './App.css';
 import Nav from './Nav';
 
-function App() {
+const App = () => {
+  const [limit, setLimit] = useState(0);
   return (
     <div className="container">
       <Nav />
@@ -16,37 +17,114 @@ function App() {
           </h1>
         </div>
       </div>
+
       <div
         className="row"
         style={{ height: '100px', backgroundColor: '#282368', color: 'white' }}
       >
         <div className="col">
-          <img
-            width="80px"
-            src="https://s3.amazonaws.com/uifaces/faces/twitter/samgrover/128.jpg"
-            class="img-thumbnail"
+          <div className="row row-cols-2">
+            <div className="col">
+              <img
+                width="80px"
+                src="https://s3.amazonaws.com/uifaces/faces/twitter/samgrover/128.jpg"
+                alt=""
+                className="rounded-circle"
+              />
+            </div>
+            <div className="col-6">
+              <p style={{ fontSize: '14px' }}>
+                John Doe
+                <br />
+                Chief Creative Officer
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="col">
+          <button className="btn btn-warning" style={{ float: 'right' }}>
+            Connected
+          </button>
+        </div>
+      </div>
+      <div className="row row-cols-2">
+        <div className="col-sm infoBox">
+          <p>999</p>
+          <p>Account Balance</p>
+        </div>
+        <div className="col-sm infoBox">
+          <p>999</p>
+          <p>Investments Balance</p>
+        </div>
+      </div>
+      <div className="row row-cols-2">
+        <div className="col-sm infoBox">
+          <p>99</p>
+          <p>Minimum Account Balance</p>
+        </div>
+        <div className="col-sm infoBox">
+          <p>99</p>
+          <p>Investment Threshold</p>
+        </div>
+      </div>
+      <div className="row m-1">
+        Send
+        <div className="row row-cols-2">
+          <div className="col-sm">
+            <input placeholder="Account" className="form-control" />
+          </div>
+          <div className="col-sm">
+            <input placeholder="Recipient" className="form-control" />
+          </div>
+        </div>
+        <button type="button" className="btn btn-dark btn-block mt-1">
+          Send
+        </button>
+      </div>
+      <div className="row m-1">
+        Withdraw
+        <div className="col-sm">
+          <input placeholder="Amount" className="form-control" />
+        </div>
+        <button type="button" className="btn btn-dark btn-block mt-1">
+          Withdraw
+        </button>
+      </div>
+      <div className="row m-1">
+        Deposit
+        <div className="col-sm">
+          <input placeholder="Amount" className="form-control" />
+        </div>
+        <button type="button" className="btn btn-dark btn-block mt-1">
+          Deposit
+        </button>
+      </div>
+      <div className="row m-1">
+        Set minimum balance
+        <div className="col-sm">
+          <input placeholder="Amount" className="form-control" />
+        </div>
+        <button type="button" className="btn btn-dark btn-block mt-1">
+          Set minimum balance
+        </button>
+      </div>
+      <div className="row m-1">
+        Set Investment threshold
+        <div className="col-sm">
+          <label for="customRange1">{limit}</label>
+          <input
+            type="range"
+            className="custom-range"
+            id="customRange1"
+            onClick={e => setLimit(e.target.value)}
           />
         </div>
-        <div className="col">Connected</div>
-      </div>
-      <div className="row">
-        <div className="col-sm">Account Balance</div>
-        <div className="col-sm">Investments Balance</div>
-      </div>
-      <div className="row">
-        <div className="col-sm">Minimum Account Balance</div>
-        <div className="col-sm">Investment Threshold</div>
-      </div>
-      <div className="row">
-        <div className="col-sm">
-          Send Eth
-          <input placeholder="Account" />
-          <input placeholder="Recipient" />
-          <button>Send</button>
-        </div>
+        <button type="button" className="btn btn-dark btn-block mt-1">
+          Set investment threshold
+        </button>
       </div>
     </div>
   );
-}
+};
 
 export default App;
