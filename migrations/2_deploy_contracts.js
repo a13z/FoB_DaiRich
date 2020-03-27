@@ -1,5 +1,5 @@
-var SimpleStorage = artifacts.require("./SimpleStorage.sol");
+var HybridBank = artifacts.require('./HybridBank.sol');
 
 module.exports = function(deployer) {
-  deployer.deploy(SimpleStorage);
+	deployer.deploy(HybridBank);
 };
