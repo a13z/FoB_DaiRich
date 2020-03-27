@@ -1,6 +1,4 @@
-pragma solidity ^0.6.1;
-
-import "@nomiclabs/buidler/console.sol";
+pragma solidity >=0.4.21 <0.7.0;
 
 // AAVE required interfaces
 interface LendingPoolAddressesProvider {
@@ -37,8 +35,8 @@ contract HybridBank {
 
 
     // Log the event about a deposit being made by an address and its amount
-    // event LogDepositMade(address indexed accountAddress, uint256 amount);
-    // event LogLendingPool(LendingPoolAddressesProvider provider, LendingPool lendingPool);
+    event LogDepositMade(address indexed accountAddress, uint256 amount);
+    event LogLendingPool(LendingPoolAddressesProvider provider, LendingPool lendingPool);
     
     // Constructor is "payable" so it can receive the initial funding of 30,
     // required to reward the first 3 clients
