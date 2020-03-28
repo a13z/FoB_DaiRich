@@ -1,151 +1,166 @@
-pragma solidity ^0.6.1;
+pragma solidity ^0.5.0;
 
-import "@nomiclabs/buidler/console.sol";
 
-// AAVE required interfaces
-interface LendingPoolAddressesProvider {
-    function getLendingPool() external view returns (address);
-}
+import "@openzeppelin/contracts/ownership/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "./aave/interfaces/ILendingPool.sol";
+import "./aave/interfaces/ILendingPoolAddressesProvider.sol";
 
-interface LendingPool {
-    function deposit(address _reserve, uint256 _amount, uint16 _referralCode) external;
-    function getReserveConfigurationData(address _reserve) external;
-    function getUserReserveData(address _reserve, address _user) external;
-}
+contract HybridBank is Ownable {
+    uint private clientCount;
+    uint private totalDeposits;
+    uint private totalInvested;
 
-interface AToken {
-    function redeem(uint256 _amount) external;
-}
-
-contract HybridBank {
-    uint8 private clientCount;
     struct Account {
-        uint256 balance;
+        // Not needed since we can use ERC20 balance function to retrieve the balance
+        uint256 balance;        // Initially this will be amount in DAI. We should allow other tokens too
+        // uint256 aToken_balance; // This is the amount of aDai received from AAVE after depositing (investing) DAI
         uint256 investmentThreshold;
         uint256 minBalance;
         uint256 invested;
+        bool isEnrolled;
     }
     mapping(address => Account) private accounts;
 
-    address public owner;
-    
+    // DAI Token used by the account
+    IERC20 daiToken;
     // AAVE variables
-    LendingPool lendingPool;
-    AToken aToken;
-    uint16 private referral;
-    address underlying_asset;
+    // aToken aDAI aToken receiving interests
+    IERC20 adaiToken;
 
+    uint16 private referral;
+    // DAI for the time being
+    address underlyingAsset;
+
+//    TODO: Check this later
+//    using SafeERC20 for IERC20;
+//    using SafeMath for uint256;
+
+    // Retrieve LendingPool address from
+    // https://github.com/masaun/prediction-ticket/blob/master/contracts/StakingByAToken.sol
+
+    /// Retrieve LendingPool address
+    ILendingPoolAddressesProvider public lendingPoolAddressProvider;
+        //    address public lendingPoolCore;
 
     // Log the event about a deposit being made by an address and its amount
-    // event LogDepositMade(address indexed accountAddress, uint256 amount);
-    // event LogLendingPool(LendingPoolAddressesProvider provider, LendingPool lendingPool);
-    
-    // Constructor is "payable" so it can receive the initial funding of 30,
-    // required to reward the first 3 clients
-    // Ropsten details
-    // LendingPool AddressesProvider 0x1c8756FD2B28e9426CDBDcC7E3c4d64fa9A54728
-    // aToken instance 0x2433A1b6FcF156956599280C3Eb1863247CFE675
-    // aDai asset address 0xf80A32A835F79D7787E8a8ee5721D0fEaFd78108
-    // aETH asset address 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE
-    // Dai smart contract 0x580D4Fdc4BF8f9b5ae2fb9225D584fED4AD5375c
+    event LogDepositMade(address indexed accountAddress, uint256 amount);
+    event LogLendingPoolCore(address lendingPoolCore);
+    event LogLendingPool(ILendingPool lendingPoolAddressProvider);
+    event LogInvestmentMade(address indexed accountAddress, uint256 amount);
+    event LogApproveERC20ToAAVE(address indexed from, address indexed to, IERC20 token);
 
-    constructor(LendingPoolAddressesProvider _lendingPoolAddressesProvider,
-                 address _aTokenAddress,
-                 address _underlying_asset,
-                 uint16 _referral) 
-                 public payable {
-         /* Set the owner to the creator of this contract */
-         owner = msg.sender;
+    modifier isEnrolled() {
+        require(
+            accounts[msg.sender].isEnrolled,
+            "Address must be enrolled in the bank"
+        );
+        _;
+    }
+    // Kovan details
+    // LendingPoolCore 0x95D1189Ed88B380E319dF73fF00E479fcc4CFa45
+    // LendingPool 0x506B0B2CF20FAA8f38a4E2B524EE43e1f4458Cc5
+    // DAI: https://kovan.etherscan.io/address/0xFf795577d9AC8bD7D90Ee22b6C1703490b6512FD
+    // aDAI: https://kovan.etherscan.io/address/0x58AD4cB396411B691A9AAb6F74545b2C5217FE6a
 
-         /// Initialise AAVE
-         /// Retrieve LendingPool address
+    constructor(ILendingPoolAddressesProvider _lendingPoolAddressesProvider,
+                IERC20 _inboundCurrency,
+                IERC20 _interestCurrency
+                )
+                public {
 
-        LendingPoolAddressesProvider provider = LendingPoolAddressesProvider(_lendingPoolAddressesProvider);
-        lendingPool = LendingPool(provider.getLendingPool());
-        aToken = AToken(_aTokenAddress);
-        underlying_asset = _underlying_asset;
-        referral = _referral;
+        daiToken = _inboundCurrency;
+        adaiToken = _interestCurrency;
+        lendingPoolAddressProvider = _lendingPoolAddressesProvider;
 
-        emit LogLendingPool(provider, lendingPool);
+        // Initialise variables
+        clientCount = 0;
+        totalDeposits = 0;
+        totalInvested = 0;
 
+        // Allow lending pool convert DAI deposited on this contract to aDAI on lending pool
+        address lendingPoolCore = lendingPoolAddressProvider.getLendingPoolCore();
+        emit LogLendingPoolCore(lendingPoolCore);
+
+        uint MAX_ALLOWANCE = 2**256 - 1;
+        daiToken.approve(lendingPoolCore, MAX_ALLOWANCE);
+        emit LogApproveERC20ToAAVE(msg.sender, lendingPoolCore, daiToken);
       }
-    
-    /// @notice Deposit ether into bank, requires method is "payable"
+
+    /// @notice Enroll a customer with the bank,
+    /// @return The balance of the user after enrolling
+    function enroll() public {
+        accounts[msg.sender].isEnrolled = true;
+        accounts[msg.sender].balance = 0;
+        accounts[msg.sender].invested = 0;
+        clientCount++;
+    }
+
+    /// @notice Deposit ether into bank
     /// @return The balance of the user after the deposit is made
-    function deposit(uint256 _amount) public payable returns (uint256, uint256) {
-        uint256 amount_to_invest;
+    function deposit(uint256 _amount)
+        public
+        isEnrolled
+        returns (uint256, uint256) {
+
+        uint256 amountToInvest;
+
+        // Check allowance from DAI contract to transfer DAI to this contract
+        require(daiToken.allowance(msg.sender, address(this)) >= _amount, "You need to have allowance to do transfer DAI on this smart contract");
+
+        // Move DAI from user wallet to HybridBank
+        require(daiToken.transferFrom(msg.sender, address(this), _amount) == true, "Transfer failed");
+
         // Add deposit amount to balance
         accounts[msg.sender].balance += _amount;
 
+        totalDeposits += _amount;
+
         // If current balance is higher than investmentThresdhold
         if ((accounts[msg.sender].investmentThreshold > 0) && (accounts[msg.sender].balance > accounts[msg.sender].investmentThreshold))  {
-            amount_to_invest = accounts[msg.sender].balance - accounts[msg.sender].investmentThreshold;
-            // Desposit the Money to a AAVE lendingPool 
-            // lendingPool.deposit(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE, amount_to_invest , referral);
-            accounts[msg.sender].invested += amount_to_invest;
-            accounts[msg.sender].balance -= amount_to_invest;
+            amountToInvest = accounts[msg.sender].balance - accounts[msg.sender].investmentThreshold;
+            _investInAAVE(amountToInvest);
         }
 
-        emit LogDepositMade(msg.sender, msg.value);
+        emit LogDepositMade(msg.sender, _amount);
         return (accounts[msg.sender].balance, accounts[msg.sender].invested);
     }
 
-    /// @notice Withdraw ether from bank
-    /// @return remainingBal The balance remaining for the user
-    function withdraw(uint256 withdrawAmount)
-        public
-        returns (uint256 remainingBal)
-    {
-        // Check enough balance available, otherwise just return balance
-        if (withdrawAmount <= accounts[msg.sender].balance) {
-            accounts[msg.sender].balance -= withdrawAmount;
-            msg.sender.transfer(withdrawAmount);
-        }
 
-        return accounts[msg.sender].balance;
-    }
-    
-    /// @notice send eth to external address
-    /// @return balance
-     function send(uint256 amount, address payable recipient) public returns (uint256 balance, uint256 invested) {
-        uint256 amount_to_borrow;
-         
-        if (amount <= accounts[msg.sender].balance) {
-            accounts[msg.sender].balance -= amount;
-            recipient.transfer(amount);
-        }
-        // We don't have enough money.
-        else {
-            // Find out the amount we need
-            amount_to_borrow = amount - accounts[msg.sender].balance;
+    function _investInAAVE(uint256 _amount) internal {
+        ILendingPool lendingPool = ILendingPool(lendingPoolAddressProvider.getLendingPool());
 
-            //  Do we have enough money in the investment account?
-            if (accounts[msg.sender].invested > amount_to_borrow) {
-                // Get amount needed from AAVE
-                // aToken.redeem(amount_to_borrow);
-                accounts[msg.sender].invested -= amount_to_borrow;
-                accounts[msg.sender].balance += amount_to_borrow;
-                recipient.transfer(amount);
-            } 
-        }
+        emit LogLendingPool(lendingPool);
 
-        // Topup functionality. If balance is below minBalance get money back from AAVE
-        if (accounts[msg.sender].balance < accounts[msg.sender].minBalance) {
-            amount_to_borrow =  accounts[msg.sender].minBalance - accounts[msg.sender].balance;
-            // Get amount needed from AAVE
-            // aToken.redeem(amount_to_borrow);
-            accounts[msg.sender].invested -= amount_to_borrow;
-            accounts[msg.sender].balance += amount_to_borrow;
-        }
-        return (accounts[msg.sender].balance, accounts[msg.sender].invested);
+        lendingPool.deposit(address(daiToken), _amount, 0);
+        accounts[msg.sender].invested += _amount;
+        accounts[msg.sender].balance -= _amount;
+        totalInvested += _amount;
+
+        emit LogInvestmentMade(msg.sender, _amount);
+
     }
 
-    /// @notice Just reads balance of the account requesting, so "constant"
-    /// @return The balance of the user
-    function balance() public view returns (uint256) {
-        return accounts[msg.sender].balance;
+    /// @notice Just reads balances of the account requesting, so "constant"
+    /// @return The balance of the user, amount deposited, invested and invested plus interests
+    function balance()
+        public view
+        isEnrolled
+        returns (uint256, uint256, uint256) {
+
+        uint256 percentageInvested;
+        uint256 investedWithInterests;
+        if (accounts[msg.sender].invested > 0) {
+            percentageInvested = accounts[msg.sender].invested / totalInvested;
+            investedWithInterests = adaiToken.balanceOf(address(this)) * percentageInvested;
+        }
+        else
+        {
+            investedWithInterests = 0;
+        }
+        return (accounts[msg.sender].balance, accounts[msg.sender].invested, investedWithInterests);
     }
-    
+
     /// @notice Set investment threshold
     /// @return investmentThresholdSet
     function setInvestmentThreshold(uint256 investmentThreshold) 
@@ -159,7 +174,7 @@ contract HybridBank {
     /// @notice reads the get investmentThreshold 
     /// @return investmentThreshold
     function getInvestmentThreshold()
-    public view returns (uint256) {
+        public view returns (uint256) {
         return accounts[msg.sender].investmentThreshold;
     }
 
@@ -185,12 +200,50 @@ contract HybridBank {
     /// @notice reads the set minBalance 
     /// @return minBalance
     function getMinBalance()
-    public view returns (uint256) {
+        public view
+        returns (uint256) {
         return accounts[msg.sender].minBalance;
     }
 
-    /// @return The balance of the Simple Bank contract
-    function depositsBalance() public view returns (uint256) {
-        return address(this).balance;
+    /// @notice reads the Total amount deposited in the Hybrid Bank
+    /// @return totalDeposits
+    function getTotalDeposits()
+        public view
+        returns (uint256) {
+        return totalDeposits;
+    }
+
+    /// @notice reads the Total amount invested in AAVE without interests
+    /// @return totalDeposits
+    function getTotalInvested()
+        public view
+        returns (uint256) {
+        return totalInvested;
+    }
+
+    /// @notice reads the Hybrid Bank DAI balance
+    /// @return DAI balance
+    function getContractDAIBalance()
+        public view
+        returns (uint256) {
+        return daiToken.balanceOf(address(this));
+    }
+
+    /// @notice Just reads balances of the aDai token
+    /// @return The balance of the total amount invested in AAVE with interests
+    function getContractAAVEBalance()
+        public view
+        onlyOwner
+        returns(uint256) {
+        return adaiToken.balanceOf(address(this));
+    }
+
+    /// @notice reads the Hybrid bank clients count
+    /// @return clientCount
+    function getClientCount()
+        public view
+        onlyOwner
+        returns (uint256) {
+        return clientCount;
     }
 }

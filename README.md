@@ -18,3 +18,31 @@ always a minimum balance in the account for daily usage.
 
 Lastly, if the account is overdraft, i.e. balance goes below 0, the system will ask for a flash loan so we could pay a small amount
 and then pay it back later.
+
+## Kovan details
+LendingPoolCore 0x95D1189Ed88B380E319dF73fF00E479fcc4CFa45
+LendingPool 0x506B0B2CF20FAA8f38a4E2B524EE43e1f4458Cc5
+DAI: https://kovan.etherscan.io/address/0xFf795577d9AC8bD7D90Ee22b6C1703490b6512FD
+aDAI: https://kovan.etherscan.io/address/0x58AD4cB396411B691A9AAb6F74545b2C5217FE6a
+
+
+## Instructions
+Install dependencies
+`$ npm install
+`
+
+Compile
+
+`$ truffle compile
+`
+
+Deploy
+
+`$ truffle migrate --network kovan
+`
+
+## Workflow
+1. Deploy the smart contract
+2. Enroll an address using the enroll function
+3. Execute DAI Approve function so you could transfer DAI to Hybrid Bank (this smart contract)
+4. Execute Hybrid Bank deposit function to transfer DAI to Hybrid Bank where thresholds and conditions will apply 

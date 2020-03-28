@@ -3,6 +3,8 @@
 // Runtime Environment's members available as global variable in that case.
 const env = require("@nomiclabs/buidler");
 
+//const HybridBank = artifacts.require("HybridBank");
+
 async function main() {
   // You can run Buidler tasks from a script.
   // For example, we make sure everything is compiled by running "compile"
@@ -10,7 +12,7 @@ async function main() {
 
   // We require the artifacts once our contracts are compiled
   const HybridBank = env.artifacts.require("HybridBank");
-  const HybridBank = await HybridBank.new("Hello, world!");
+  const HybridBankDeployed = await HybridBank.new();
 
   console.log("HybridBank address:", HybridBank.address);
 }
