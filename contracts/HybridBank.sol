@@ -209,8 +209,7 @@ contract HybridBank is Ownable {
     }
 
     function _topUp()
-        internal
-        isEnrolled {
+        internal {
         // Topup functionality. If balance is below minBalance get money back from AAVE if possible
         // If there's not enough money in AAVE, two options:
         // 1. Check if we have allowance from DAI contract, if we have enough we transfer money from DAI contract
@@ -239,6 +238,7 @@ contract HybridBank is Ownable {
             totalDeposits += amountToBorrow;
 
         // Micro credit or Flash Loan
+        }
     }
 
     /// @notice Just reads balances of the account requesting, so "constant"
