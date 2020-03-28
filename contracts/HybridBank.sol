@@ -12,9 +12,9 @@ contract HybridBank is Ownable {
     uint private totalInvested;
 
     struct Account {
-        // Not needed since we can use ERC20 balance function to retrieve the balance
-        uint256 balance;        // Initially this will be amount in DAI. We should allow other tokens too
-        // uint256 aToken_balance; // This is the amount of aDai received from AAVE after depositing (investing) DAI
+        // Number of DAI tokens transferred and deposited to Hybrid Bank
+        // TODO: We should allow other tokens too
+        uint256 balance;
         uint256 investmentThreshold;
         uint256 minBalance;
         uint256 invested;
@@ -24,24 +24,21 @@ contract HybridBank is Ownable {
 
     // DAI Token used by the account
     IERC20 daiToken;
-    // AAVE variables
-    // aToken aDAI aToken receiving interests
+    // AAVE aDAI aToken receiving interests
     IERC20 adaiToken;
-
+    // AAVE referral. We could add referrals to customers.
+    // i.e. bringing new customers will earn more interest
     uint16 private referral;
-    // DAI for the time being
-    address underlyingAsset;
 
-//    TODO: Check this later
-//    using SafeERC20 for IERC20;
-//    using SafeMath for uint256;
+    // TODO: Check this later
+    // using SafeERC20 for IERC20;
+    // using SafeMath for uint256;
 
     // Retrieve LendingPool address from
     // https://github.com/masaun/prediction-ticket/blob/master/contracts/StakingByAToken.sol
 
     /// Retrieve LendingPool address
     ILendingPoolAddressesProvider public lendingPoolAddressProvider;
-        //    address public lendingPoolCore;
 
     // Log the event about a deposit being made by an address and its amount
     event LogDepositMade(address indexed accountAddress, uint256 amount);
@@ -57,11 +54,6 @@ contract HybridBank is Ownable {
         );
         _;
     }
-    // Kovan details
-    // LendingPoolCore 0x95D1189Ed88B380E319dF73fF00E479fcc4CFa45
-    // LendingPool 0x506B0B2CF20FAA8f38a4E2B524EE43e1f4458Cc5
-    // DAI: https://kovan.etherscan.io/address/0xFf795577d9AC8bD7D90Ee22b6C1703490b6512FD
-    // aDAI: https://kovan.etherscan.io/address/0x58AD4cB396411B691A9AAb6F74545b2C5217FE6a
 
     constructor(ILendingPoolAddressesProvider _lendingPoolAddressesProvider,
                 IERC20 _inboundCurrency,
@@ -139,6 +131,114 @@ contract HybridBank is Ownable {
 
         emit LogInvestmentMade(msg.sender, _amount);
 
+    }
+
+    /// @notice pay with DAI to someone for something
+    /// @return balance
+    function pay(address _recipient, uint256 _amount)
+        public
+        isEnrolled
+        returns (uint256 balance, uint256 invested) {
+
+        uint256 amountToBorrow;
+
+        if (_amount <= accounts[msg.sender].balance) {
+            // Pay in DAI to recipient
+            // TODO: This will send DAI from Hybrid Bank to Recipient
+            // TODO: I think it should be more personal, i.e. sent money from person address
+            daiToken.transfer(_recipient, _amount);
+
+            // Update balances
+            accounts[msg.sender].balance -= _amount;
+            totalDeposits -= _amount;
+        }
+        // We don't have enough money.
+        else {
+            // Find out the amount we need
+            amountToBorrow = _amount - accounts[msg.sender].balance;
+
+            //  Do we have enough money in the investment account?
+            if (accounts[msg.sender].invested > amountToBorrow) {
+                // Get amount needed from AAVE
+                _redeemInvestmentAAVE(amountToBorrow);
+                // Update Balances
+                accounts[msg.sender].invested -= amountToBorrow;
+                accounts[msg.sender].balance += amountToBorrow;
+            }
+            // We don't have enough in our investment account so
+            // we transfer from DAI if we have enough allowance
+            else {
+                // Check allowance from DAI contract to transfer DAI to this contract
+                require(daiToken.allowance(msg.sender, address(this)) >= amountToBorrow, "You need to have allowance to do transfer DAI on this smart contract");
+
+                // Move DAI from user wallet to HybridBank
+                require(daiToken.transferFrom(msg.sender, address(this), amountToBorrow) == true, "Transfer failed");
+
+                // Update Balances
+                accounts[msg.sender].balance += amountToBorrow;
+                totalDeposits += amountToBorrow;
+            }
+            // We have now enough balance to pay
+            // Pay in DAI to recipient
+            daiToken.transfer(_recipient, _amount);
+
+            // Update Balances
+            accounts[msg.sender].balance -= _amount;
+            totalDeposits -= _amount;
+        }
+        if (accounts[msg.sender].balance < accounts[msg.sender].minBalance) {
+            _topUp();
+        }
+
+        return (accounts[msg.sender].balance, accounts[msg.sender].invested);
+    }
+
+    function _redeemInvestmentAAVE(uint256 _amount)
+        internal {
+        ILendingPool lendingPool = ILendingPool(lendingPoolAddressProvider.getLendingPool());
+
+        emit LogLendingPool(lendingPool);
+
+        lendingPool.redeem(_amount);
+        accounts[msg.sender].invested += _amount;
+        accounts[msg.sender].balance -= _amount;
+        totalInvested += _amount;
+
+        emit LogInvestmentMade(msg.sender, _amount);
+
+    }
+
+    function _topUp()
+        internal
+        isEnrolled {
+        // Topup functionality. If balance is below minBalance get money back from AAVE if possible
+        // If there's not enough money in AAVE, two options:
+        // 1. Check if we have allowance from DAI contract, if we have enough we transfer money from DAI contract
+        // 2. Check options for a micro loan
+        uint256 amountToBorrow;
+
+        // Find out the amount we need
+        amountToBorrow = accounts[msg.sender].minBalance - accounts[msg.sender].balance;
+        if (accounts[msg.sender].invested > amountToBorrow) {
+            // Get amount needed from AAVE
+            _redeemInvestmentAAVE(amountToBorrow);
+            // Update Balances
+            accounts[msg.sender].invested -= amountToBorrow;
+            accounts[msg.sender].balance += amountToBorrow;
+        }
+        else {
+            // Check allowance from DAI contract to transfer DAI to this contract
+            require(daiToken.allowance(msg.sender, address(this)) >= amountToBorrow, "You need to have allowance to do transfer DAI on this smart contract");
+
+            // Move DAI from user wallet to HybridBank
+            require(daiToken.transferFrom(msg.sender, address(this), amountToBorrow) == true, "Transfer failed");
+
+            // Add deposit amount to balance
+            accounts[msg.sender].balance += amountToBorrow;
+
+            totalDeposits += amountToBorrow;
+
+        // Micro credit or Flash Loan
     }
 
     /// @notice Just reads balances of the account requesting, so "constant"
