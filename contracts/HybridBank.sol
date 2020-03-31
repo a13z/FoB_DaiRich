@@ -3,6 +3,7 @@ pragma solidity ^0.5.0;
 
 import "@openzeppelin/contracts/ownership/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "./aave/interfaces/IAToken.sol";
 import "./aave/interfaces/ILendingPool.sol";
 import "./aave/interfaces/ILendingPoolAddressesProvider.sol";
 
@@ -25,7 +26,7 @@ contract HybridBank is Ownable {
     // DAI Token used by the account
     IERC20 daiToken;
     // AAVE aDAI aToken receiving interests
-    IERC20 adaiToken;
+    IAtoken adaiToken;
     // AAVE referral. We could add referrals to customers.
     // i.e. bringing new customers will earn more interest
     uint16 private referral;
@@ -57,7 +58,7 @@ contract HybridBank is Ownable {
 
     constructor(ILendingPoolAddressesProvider _lendingPoolAddressesProvider,
                 IERC20 _inboundCurrency,
-                IERC20 _interestCurrency
+                IAtoken _interestCurrency
                 )
                 public {
 
@@ -155,24 +156,21 @@ contract HybridBank is Ownable {
         // We don't have enough money.
         else {
             // Find out the amount we need
-            amountToBorrow = _amount - accounts[msg.sender].balance;
+            amountToBorrow = _amount - accounts[msg.sender].balance + accounts[msg.sender].minBalance ;
 
             //  Do we have enough money in the investment account?
             if (accounts[msg.sender].invested > amountToBorrow) {
                 // Get amount needed from AAVE
                 _redeemInvestmentAAVE(amountToBorrow);
-                // Update Balances
-                accounts[msg.sender].invested -= amountToBorrow;
-                accounts[msg.sender].balance += amountToBorrow;
             }
             // We don't have enough in our investment account so
             // we transfer from DAI if we have enough allowance
             else {
                 // Check allowance from DAI contract to transfer DAI to this contract
-                require(daiToken.allowance(msg.sender, address(this)) >= amountToBorrow, "You need to have allowance to do transfer DAI on this smart contract");
+                require(daiToken.allowance(msg.sender, address(this)) >= amountToBorrow, "You don't have enough funds. You need to have allowance to do transfer DAI on this smart contract");
 
                 // Move DAI from user wallet to HybridBank
-                require(daiToken.transferFrom(msg.sender, address(this), amountToBorrow) == true, "Transfer failed");
+                require(daiToken.transferFrom(msg.sender, address(this), amountToBorrow) == true, "DAI Transfer failed");
 
                 // Update Balances
                 accounts[msg.sender].balance += amountToBorrow;
@@ -195,16 +193,11 @@ contract HybridBank is Ownable {
 
     function _redeemInvestmentAAVE(uint256 _amount)
         internal {
-        ILendingPool lendingPool = ILendingPool(lendingPoolAddressProvider.getLendingPool());
 
-        emit LogLendingPool(lendingPool);
-
-        lendingPool.redeem(_amount);
-        accounts[msg.sender].invested += _amount;
-        accounts[msg.sender].balance -= _amount;
-        totalInvested += _amount;
-
-        emit LogInvestmentMade(msg.sender, _amount);
+        adaiToken.redeem(_amount);
+        accounts[msg.sender].invested -= _amount;
+        accounts[msg.sender].balance += _amount;
+        totalInvested -= _amount;
 
     }
 
@@ -216,28 +209,31 @@ contract HybridBank is Ownable {
         // 2. Check options for a micro loan
         uint256 amountToBorrow;
 
-        // Find out the amount we need
-        amountToBorrow = accounts[msg.sender].minBalance - accounts[msg.sender].balance;
-        if (accounts[msg.sender].invested > amountToBorrow) {
-            // Get amount needed from AAVE
-            _redeemInvestmentAAVE(amountToBorrow);
-            // Update Balances
-            accounts[msg.sender].invested -= amountToBorrow;
-            accounts[msg.sender].balance += amountToBorrow;
-        }
-        else {
-            // Check allowance from DAI contract to transfer DAI to this contract
-            require(daiToken.allowance(msg.sender, address(this)) >= amountToBorrow, "You need to have allowance to do transfer DAI on this smart contract");
+        if (accounts[msg.sender].balance < accounts[msg.sender].minBalance) {
+            // Find out the amount we need
+            amountToBorrow = accounts[msg.sender].minBalance - accounts[msg.sender].balance;
+            if (accounts[msg.sender].invested > amountToBorrow) {
+                // Get amount needed from AAVE
+                _redeemInvestmentAAVE(amountToBorrow);
 
-            // Move DAI from user wallet to HybridBank
-            require(daiToken.transferFrom(msg.sender, address(this), amountToBorrow) == true, "Transfer failed");
+                // Update Balances
+                accounts[msg.sender].invested -= amountToBorrow;
+                accounts[msg.sender].balance += amountToBorrow;
+            }
+            else {
+                // Check allowance from DAI contract to transfer DAI to this contract
+                require(daiToken.allowance(msg.sender, address(this)) >= amountToBorrow, "You need to have allowance to do transfer DAI on this smart contract");
 
-            // Add deposit amount to balance
-            accounts[msg.sender].balance += amountToBorrow;
+                // Move DAI from user wallet to HybridBank
+                require(daiToken.transferFrom(msg.sender, address(this), amountToBorrow) == true, "Transfer failed");
 
-            totalDeposits += amountToBorrow;
+                // Add deposit amount to balance
+                accounts[msg.sender].balance += amountToBorrow;
 
-        // Micro credit or Flash Loan
+                totalDeposits += amountToBorrow;
+
+            // TODO: Micro credit or Flash Loan
+            }
         }
     }
 
@@ -264,7 +260,8 @@ contract HybridBank is Ownable {
     /// @notice Set investment threshold
     /// @return investmentThresholdSet
     function setInvestmentThreshold(uint256 investmentThreshold) 
-        public 
+        public
+        isEnrolled
         returns (uint256 investmentThresholdSet) 
     {
         accounts[msg.sender].investmentThreshold = investmentThreshold;
@@ -274,33 +271,46 @@ contract HybridBank is Ownable {
     /// @notice reads the get investmentThreshold 
     /// @return investmentThreshold
     function getInvestmentThreshold()
-        public view returns (uint256) {
+        public view
+        isEnrolled
+        returns (uint256) {
         return accounts[msg.sender].investmentThreshold;
     }
 
-    /// @notice reads the get investment
+    /// @notice reads the get account balance
+    /// @return balance
+    function getAccountBalance()
+        public view
+        isEnrolled
+        returns (uint256) {
+        return accounts[msg.sender].balance;
+    }
+
+    /// @notice reads the get investment WITHOUT interests
     /// @return investment
-    function getInvestmentBalance()
-    public view returns (uint256) {
-        // AAVE Investment Balance
-        // return lendingPool.getUserReserveData(underlying_asset, msg.sender)
+    function getInvestedAmount()
+        public view
+        isEnrolled
+        returns (uint256) {
         return accounts[msg.sender].invested;
     }
-    
+
     /// @notice Set minBalance 
     /// @return minBalanceSet
     function setMinBalance(uint256 minBalance) 
-        public 
-        returns (uint256 minBalanceSet) 
-    {
+        public
+        isEnrolled
+        returns (uint256 minBalanceSet) {
+
         accounts[msg.sender].minBalance = minBalance;
-            return accounts[msg.sender].minBalance;
+        return accounts[msg.sender].minBalance;
     }
     
-    /// @notice reads the set minBalance 
+    /// @notice reads the get minBalance
     /// @return minBalance
     function getMinBalance()
         public view
+        isEnrolled
         returns (uint256) {
         return accounts[msg.sender].minBalance;
     }
@@ -313,7 +323,7 @@ contract HybridBank is Ownable {
         return totalDeposits;
     }
 
-    /// @notice reads the Total amount invested in AAVE without interests
+    /// @notice reads the Total amount invested without interests
     /// @return totalDeposits
     function getTotalInvested()
         public view
@@ -330,12 +340,73 @@ contract HybridBank is Ownable {
     }
 
     /// @notice Just reads balances of the aDai token
-    /// @return The balance of the total amount invested in AAVE with interests
-    function getContractAAVEBalance()
+    /// @return The balance of the total amount invested in AAVE WITH interests
+    function getContractAAVEBalanceOf()
         public view
         onlyOwner
         returns(uint256) {
         return adaiToken.balanceOf(address(this));
+    }
+
+    /// @notice Just reads balances of the aDai token
+    /// @return The balance of the total amount invested in aDAI token WITHOUT interests
+    function getContractAAVEprincipalBalanceOf()
+        public view
+        onlyOwner
+        returns(uint256) {
+        return adaiToken.principalBalanceOf(address(this));
+    }
+
+    /// @notice Just reads ReserveConfigurationData
+    /// @return Reserve Configuration Data
+    function getContractAAVEReserveConfigurationData()
+        public
+        onlyOwner
+        returns ( uint256 ltv, uint256 liquidationThreshold, uint256 liquidationDiscount, address interestRateStrategyAddress, bool usageAsCollateralEnabled, bool borrowingEnabled, bool fixedBorrowRateEnabled, bool isActive ) {
+
+        ILendingPool lendingPool = ILendingPool(lendingPoolAddressProvider.getLendingPool());
+        emit LogLendingPool(lendingPool);
+        return lendingPool.getReserveConfigurationData(address(daiToken));
+
+    }
+
+    /// @notice Just reads getReserveData
+    /// @return Reserve Data
+    function getContractAAVEReserveData()
+        public
+        onlyOwner
+        returns ( uint256 totalLiquidity, uint256 availableLiquidity, uint256 totalBorrowsFixed, uint256 totalBorrowsVariable, uint256 liquidityRate, uint256 variableBorrowRate, uint256 fixedBorrowRate, uint256 averageFixedBorrowRate, uint256 utilizationRate, uint256 liquidityIndex, uint256 variableBorrowIndex, address aTokenAddress, uint40 lastUpdateTimestamp ) {
+
+        ILendingPool lendingPool = ILendingPool(lendingPoolAddressProvider.getLendingPool());
+        emit LogLendingPool(lendingPool);
+        return lendingPool.getReserveData(address(daiToken));
+
+    }
+
+    /// @notice Just reads getUserReserveData
+    /// @return User Reserve Data
+    function getContractAAVEUserReserveData()
+        public
+        onlyOwner
+        returns ( uint256 currentATokenBalance, uint256 currentUnderlyingBalance, uint256 currentBorrowBalance, uint256 principalBorrowBalance, uint256 borrowRateMode, uint256 borrowRate, uint256 liquidityRate, uint256 originationFee, uint256 variableBorrowIndex, uint256 lastUpdateTimestamp, bool usageAsCollateralEnabled ) {
+
+        ILendingPool lendingPool = ILendingPool(lendingPoolAddressProvider.getLendingPool());
+        emit LogLendingPool(lendingPool);
+        return lendingPool.getUserReserveData(address(daiToken), address(this));
+
+    }
+
+    /// @notice Just reads getUserAccountData
+    /// @return User Account Data
+    function getContractAAVEUserAccountData()
+        public
+        onlyOwner
+        returns ( uint256 totalLiquidityETH, uint256 totalCollateralETH, uint256 totalBorrowsETH, uint256 availableBorrowsETH, uint256 currentLiquidationThreshold, uint256 ltv, uint256 healthFactor ) {
+
+        ILendingPool lendingPool = ILendingPool(lendingPoolAddressProvider.getLendingPool());
+        emit LogLendingPool(lendingPool);
+        return lendingPool.getUserAccountData(address(this));
+
     }
 
     /// @notice reads the Hybrid bank clients count
@@ -344,6 +415,7 @@ contract HybridBank is Ownable {
         public view
         onlyOwner
         returns (uint256) {
+
         return clientCount;
     }
 }
