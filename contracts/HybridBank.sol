@@ -1,4 +1,4 @@
-pragma solidity ^0.5.0;
+pragma solidity ^0.6.0;
 
 
 import "@openzeppelin/contracts/ownership/Ownable.sol";
@@ -81,7 +81,6 @@ contract HybridBank is Ownable {
       }
 
     /// @notice Enroll a customer with the bank,
-    /// @return The balance of the user after enrolling
     function enroll() public {
         accounts[msg.sender].isEnrolled = true;
         accounts[msg.sender].balance = 0;
@@ -259,16 +258,16 @@ contract HybridBank is Ownable {
 
     /// @notice Set investment threshold
     /// @return investmentThresholdSet
-    function setInvestmentThreshold(uint256 investmentThreshold) 
+    function setInvestmentThreshold(uint256 investmentThreshold)
         public
         isEnrolled
-        returns (uint256 investmentThresholdSet) 
+        returns (uint256 investmentThresholdSet)
     {
         accounts[msg.sender].investmentThreshold = investmentThreshold;
         return accounts[msg.sender].investmentThreshold;
     }
-    
-    /// @notice reads the get investmentThreshold 
+
+    /// @notice reads the get investmentThreshold
     /// @return investmentThreshold
     function getInvestmentThreshold()
         public view
@@ -295,9 +294,9 @@ contract HybridBank is Ownable {
         return accounts[msg.sender].invested;
     }
 
-    /// @notice Set minBalance 
+    /// @notice Set minBalance
     /// @return minBalanceSet
-    function setMinBalance(uint256 minBalance) 
+    function setMinBalance(uint256 minBalance)
         public
         isEnrolled
         returns (uint256 minBalanceSet) {
@@ -305,7 +304,7 @@ contract HybridBank is Ownable {
         accounts[msg.sender].minBalance = minBalance;
         return accounts[msg.sender].minBalance;
     }
-    
+
     /// @notice reads the get minBalance
     /// @return minBalance
     function getMinBalance()
@@ -358,7 +357,6 @@ contract HybridBank is Ownable {
     }
 
     /// @notice Just reads ReserveConfigurationData
-    /// @return Reserve Configuration Data
     function getContractAAVEReserveConfigurationData()
         public
         onlyOwner
@@ -371,7 +369,6 @@ contract HybridBank is Ownable {
     }
 
     /// @notice Just reads getReserveData
-    /// @return Reserve Data
     function getContractAAVEReserveData()
         public
         onlyOwner
@@ -384,7 +381,6 @@ contract HybridBank is Ownable {
     }
 
     /// @notice Just reads getUserReserveData
-    /// @return User Reserve Data
     function getContractAAVEUserReserveData()
         public
         onlyOwner
@@ -397,7 +393,6 @@ contract HybridBank is Ownable {
     }
 
     /// @notice Just reads getUserAccountData
-    /// @return User Account Data
     function getContractAAVEUserAccountData()
         public
         onlyOwner
