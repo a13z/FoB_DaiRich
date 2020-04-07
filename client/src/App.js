@@ -6,7 +6,21 @@ import Nav from './Nav';
 import './App.css';
 
 class App extends Component {
-	state = { storageValue: 0, web3: null, accounts: null, contract: null };
+	state = {
+		accounts: null,
+		balance: 0,
+		contract: null,
+		invested: 0,
+		investedWithInterest: 0,
+		investmentThreshold: 0,
+		minBal: 0,
+		setInvestmentThreshold: 50,
+		setDepositAmount: 0,
+		setMinBal: 0,
+		web3: null,
+		sendTo: '',
+		sendAmount: '',
+	};
 
 	componentDidMount = async () => {
 		try {
@@ -17,16 +31,17 @@ class App extends Component {
 			const accounts = await web3.eth.getAccounts();
 
 			// Get the contract instance.
-			const networkId = await web3.eth.net.getId();
-			const deployedNetwork = HybridBankContract.networks[networkId];
 			const instance = new web3.eth.Contract(
-				HybridBankContract.abi,
-				deployedNetwork && deployedNetwork.address
+				HybridBankContract,
+				'0xA2400E598dC2A62d297249B6b0a188E54D4A42Ed'
 			);
 
 			// Set web3, accounts, and contract to the state, and then proceed with an
 			// example of interacting with the contract's methods.
-			this.setState({ web3, accounts, contract: instance });
+			this.setState(
+				{ web3, accounts, contract: instance },
+				this.getAccountStats
+			);
 		} catch (error) {
 			// Catch any errors for any of the above operations.
 			alert(
@@ -34,6 +49,60 @@ class App extends Component {
 			);
 			console.error(error);
 		}
+	};
+
+	handleChange(event) {
+		const { name, value } = event.target;
+		this.setState({ [name]: value });
+	}
+
+	setInvestmentThreshold = async () => {
+		const { contract, accounts, setInvestmentThreshold } = this.state;
+		await contract.methods
+			.setInvestmentThreshold(setInvestmentThreshold)
+			.send({ from: accounts[0] });
+		this.setState({
+			investmentThreshold: setInvestmentThreshold,
+		});
+	};
+
+	setMinBalance = async () => {
+		const { contract, accounts, setMinBal } = this.state;
+		await contract.methods.setMinBalance(setMinBal).send({ from: accounts[0] });
+		this.setState({
+			minBal: setMinBal,
+		});
+	};
+
+	setDepositAmount = async () => {
+		const { contract, accounts, setDepositAmount } = this.state;
+		await contract.methods
+			.deposit(setDepositAmount)
+			.send({ from: accounts[0] });
+	};
+
+	sendDai = async () => {
+		const { contract, accounts, sendTo, sendAmount } = this.state;
+		await contract.methods.pay(sendTo, sendAmount).send({ from: accounts[0] });
+	};
+
+	getAccountStats = async () => {
+		const { contract, accounts } = this.state;
+		const bal = await contract.methods.balance().call({ from: accounts[0] });
+		const minBal = await contract.methods
+			.getMinBalance()
+			.call({ from: accounts[0] });
+		const investmentThreshold = await contract.methods
+			.getInvestmentThreshold()
+			.call({ from: accounts[0] });
+
+		this.setState({
+			balance: bal[0],
+			invested: bal[1],
+			investedWithInterest: bal[2],
+			minBal,
+			investmentThreshold,
+		});
 	};
 
 	render() {
@@ -59,7 +128,7 @@ class App extends Component {
 					style={{
 						height: '100px',
 						backgroundColor: '#282368',
-						color: 'white'
+						color: 'white',
 					}}
 				>
 					<div className='col'>
@@ -91,21 +160,21 @@ class App extends Component {
 				</div>
 				<div className='row row-cols-2'>
 					<div className='col-sm infoBox'>
-						<p>999</p>
+						<p>{this.state.balance}</p>
 						<p>Account Balance</p>
 					</div>
 					<div className='col-sm infoBox'>
-						<p>999</p>
+						<p>{this.state.invested}</p>
 						<p>Investments Balance</p>
 					</div>
 				</div>
 				<div className='row row-cols-2'>
 					<div className='col-sm infoBox'>
-						<p>99</p>
+						<p>{this.state.minBal}</p>
 						<p>Minimum Account Balance</p>
 					</div>
 					<div className='col-sm infoBox'>
-						<p>99</p>
+						<p>{this.state.investmentThreshold}</p>
 						<p>Investment Threshold</p>
 					</div>
 				</div>
@@ -113,55 +182,103 @@ class App extends Component {
 					Send
 					<div className='row row-cols-2'>
 						<div className='col-sm'>
-							<input placeholder='Account' className='form-control' />
+							<input
+								placeholder='Recipient'
+								className='form-control'
+								name='sendTo'
+								value={this.state.sendTo}
+								onChange={(e) => this.handleChange(e)}
+							/>
 						</div>
 						<div className='col-sm'>
-							<input placeholder='Recipient' className='form-control' />
+							<input
+								placeholder='Amount'
+								className='form-control'
+								name='sendAmount'
+								value={this.state.sendAmount}
+								onChange={(e) => this.handleChange(e)}
+							/>
 						</div>
 					</div>
-					<button type='button' className='btn btn-dark btn-block mt-1'>
+					<button
+						type='button'
+						className='btn btn-dark btn-block mt-1'
+						onClick={() => this.sendDai()}
+					>
 						Send
 					</button>
 				</div>
 				<div className='row m-1'>
 					Withdraw
 					<div className='col-sm'>
-						<input placeholder='Amount' className='form-control' />
+						<input placeholder='Amount' className='form-control' disabled />
 					</div>
-					<button type='button' className='btn btn-dark btn-block mt-1'>
+					<button
+						type='button'
+						className='btn btn-dark btn-block mt-1'
+						disabled
+					>
 						Withdraw
 					</button>
 				</div>
 				<div className='row m-1'>
 					Deposit
 					<div className='col-sm'>
-						<input placeholder='Amount' className='form-control' />
+						<input
+							placeholder='Amount'
+							className='form-control'
+							name='setDepositAmount'
+							onChange={(e) => this.handleChange(e)}
+							value={this.state.setDepositAmount}
+						/>
 					</div>
-					<button type='button' className='btn btn-dark btn-block mt-1'>
+					<button
+						type='button'
+						className='btn btn-dark btn-block mt-1'
+						onClick={() => this.setDepositAmount()}
+					>
 						Deposit
 					</button>
 				</div>
 				<div className='row m-1'>
 					Set minimum balance
 					<div className='col-sm'>
-						<input placeholder='Amount' className='form-control' />
+						<input
+							placeholder='Amount'
+							name='setMinBal'
+							className='form-control'
+							value={this.state.setMinBal}
+							onChange={(e) => this.handleChange(e)}
+						/>
 					</div>
-					<button type='button' className='btn btn-dark btn-block mt-1'>
+					<button
+						type='button'
+						className='btn btn-dark btn-block mt-1'
+						onClick={() => this.setMinBalance()}
+					>
 						Set minimum balance
 					</button>
 				</div>
 				<div className='row m-1'>
 					Set Investment threshold
 					<div className='col-sm'>
-						<label htmlFor='customRange1'>limit</label>
+						<label htmlFor='customRange1'>
+							{this.state.setInvestmentThreshold}
+						</label>
 						<input
 							type='range'
 							className='custom-range'
 							id='customRange1'
-							// onClick={e => setLimit(e.target.value)}
+							onClick={(e) =>
+								this.setState({ setInvestmentThreshold: e.target.value })
+							}
 						/>
 					</div>
-					<button type='button' className='btn btn-dark btn-block mt-1'>
+					<button
+						type='button'
+						className='btn btn-dark btn-block mt-1'
+						onClick={() => this.setInvestmentThreshold()}
+					>
 						Set investment threshold
 					</button>
 				</div>
