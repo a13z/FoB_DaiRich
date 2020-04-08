@@ -119,6 +119,25 @@ contract HybridBank is Ownable {
         return (accounts[msg.sender].balance, accounts[msg.sender].invested);
     }
 
+    // @notice User withdraw DAI from Hybrid Bank to DAI smart contract
+    // @returns balance and invested amount
+    function withdraw(uint256 _amount)
+        public
+        isEnrolled
+        returns (uint256, uint256) {
+
+        // Check account balance is enough to transfer
+        require(accounts[msg.sender].balance >= _amount, "Your balance is lower than the amount you want to transfer.");
+ 
+        // Mode DAI from HybridBank to DAI user wallet
+        require(daiToken.transfer(msg.sender, _amount) == true, "Transfer failed");
+
+        // Remove amount from user balance
+        accounts[msg.sender].balance -= _amount;
+        
+        return (accounts[msg.sender].balance, accounts[msg.sender].invested);
+      }
+
 
     function _investInAAVE(uint256 _amount) internal {
         ILendingPool lendingPool = ILendingPool(lendingPoolAddressProvider.getLendingPool());
@@ -417,5 +436,13 @@ contract HybridBank is Ownable {
         returns (uint256) {
 
         return clientCount;
+    }
+
+    /// @notice reads the enroll status
+    /// @return bool
+    function isAccountEnrolled()
+        public view
+        returns (bool) {
+        return accounts[msg.sender].isEnrolled;
     }
 }
