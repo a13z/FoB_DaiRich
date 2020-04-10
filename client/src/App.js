@@ -6,7 +6,7 @@ import IERC20 from './contracts/IERC20.json';
 import './App.css';
 
 const HYBRID_BANK_CONTRACT_ADDRESS =
-	'0xF1769060B1773b06780B3786D8cdd05f9B39b688';
+	'0xf149165068882b9d578e5483b437f1c85C95D038';
 
 class App extends Component {
 	state = {
@@ -28,6 +28,7 @@ class App extends Component {
 		disabledEnroll: true,
 		approveAmount: '',
 		loading: false,
+		withdrawAmount: '',
 	};
 
 	componentDidMount = async () => {
@@ -130,6 +131,12 @@ class App extends Component {
 			minBal,
 			investmentThreshold,
 		});
+	};
+
+	withdraw = async () => {
+		const { accounts, contract, withdrawAmount } = this.state;
+		await contract.methods.withdraw(withdrawAmount).send({ from: accounts[0] });
+		this.getAccountStats();
 	};
 
 	approve = async () => {
@@ -301,12 +308,17 @@ class App extends Component {
 					<div className='row m-1'>
 						Withdraw
 						<div className='col-sm'>
-							<input placeholder='Amount' className='form-control' disabled />
+							<input
+								placeholder='Amount'
+								name='withdrawAmount'
+								onChange={(e) => this.handleChange(e)}
+								className='form-control'
+							/>
 						</div>
 						<button
 							type='button'
 							className='btn btn-dark btn-block mt-1'
-							disabled
+							onClick={() => this.withdraw()}
 						>
 							{this.state.loading ? 'Processing...' : 'Withdraw'}
 						</button>
